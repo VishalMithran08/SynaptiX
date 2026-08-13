@@ -1,15 +1,16 @@
 # Image Restoration — SemiCon AI Hackathon
 
 Restores degraded grayscale images: removes speckle and Gaussian noise **and**
-upscales 2× in a single pass. NAFNet-based, 29.56M parameters, 54 ms per image.
+upscales 2× in a single pass. NAFNet-based, 183.16M parameters, 168 ms per image.
 
 | Metric (320-image held-out validation, 8-view TTA) | |
 |---|---|
-| **PSNR** | **26.2934 dB** |
-| **SSIM** | **0.792988** |
-| **LPIPS** | **0.331840** |
-| Inference | **53.8 ms/image** (RTX 5060 Laptop, incl. TTA) |
-| Model size | 56.5 MB (float16 storage, float32 inference) |
+| **PSNR** | **26.4093 dB** |
+| **SSIM** | **0.795909** |
+| **LPIPS** | **0.319032** |
+| Hard subset (160 images) | 27.8010 dB / 0.840699 SSIM |
+| Inference | **168.4 ms/image** (RTX 5060 Laptop, incl. TTA) |
+| Model size | 349.5 MB (float16 storage, float32 inference) |
 
 ---
 
@@ -23,13 +24,20 @@ pip install -r requirements.txt
 python evaluate.py --input_dir /path/to/test_images --output_dir /path/to/results
 ```
 
-That is the whole procedure. The trained weights are committed in `weights/`
-(56.5 MB, no Git LFS or external download needed) and no paths need editing.
+That is the whole procedure. Everything needed is committed to this repository
+— **no Git LFS, no external download, no manual steps.**
 
-> Weights are **stored** as float16 to stay under GitHub's 100 MB per-file limit
-> and are cast to float32 at load; inference runs in float32 throughout. The
-> measured cost of that rounding is **0.0000 dB PSNR and 0.000004 SSIM** — i.e.
-> nothing.
+> **How the weights are packaged.** At 183M parameters the model is 349.5 MB,
+> over GitHub's 100 MB per-file limit. Rather than depend on Git LFS (which
+> silently degrades to a pointer file if the reviewer lacks `git-lfs`) or an
+> external download, the weights ship as four `<100 MB` parts with a SHA-256
+> manifest. `evaluate.py` reassembles them **in memory** at load time — nothing
+> is written to disk, so it works on a read-only checkout, and every part plus
+> the whole file is checksum-verified so a truncated clone fails loudly instead
+> of loading garbage. Verified byte-identical to the unsplit file.
+>
+> Weights are stored float16 and cast to float32 at load; inference runs in
+> float32 throughout. Measured cost of that rounding: **0.0000 dB PSNR**.
 
 ### Inference options
 
@@ -37,7 +45,7 @@ That is the whole procedure. The trained weights are committed in `weights/`
 |---|---|---|
 | `--input_dir` | *(required)* | Directory of degraded images |
 | `--output_dir` | *(required)* | Created if absent |
-| `--weights` | `weights/nafnet64_final.pth` | |
+| `--weights` | `weights/nafnet160_final.pth` | |
 | `--batch_size` | `8` | Halves automatically on CUDA OOM |
 | `--device` | auto | `cuda` if available, else `cpu` |
 | `--no_tta` | off | Disables the 8-view self-ensemble (~8× faster, −0.16 dB) |
@@ -57,15 +65,16 @@ That is the whole procedure. The trained weights are committed in `weights/`
 ## Model
 
 **NAFNet** (Chen et al., *Simple Baselines for Image Restoration*, ECCV 2022),
-adapted for 2× super-resolution.
+adapted for 2× super-resolution. Width 160, 183.16M parameters — selected by a
+measured capacity study across 7.49M / 29.56M / 183.16M.
 
 ```
 input  [B, 1, H, W]        float32, may exceed [0,1] — never clipped
-  → 3×3 conv  (1 → 64)
-  → encoder   4 stages, ch [64,128,256,512], blocks [2,2,4,8]
+  → 3×3 conv  (1 → 160)
+  → encoder   4 stages, ch [160,320,640,1280], blocks [2,2,4,8]
   → bottleneck 12 NAFBlocks
   → decoder   4 stages, blocks [2,2,2,2], skip-concat + 1×1 reduce
-  → SR tail   conv(64→4, ICNR-init) + PixelShuffle(2)
+  → SR tail   conv(160→4, ICNR-init) + PixelShuffle(2)
   → clamp(0,1)                       ← the only clamp in the forward pass
 output [B, 1, 2H, 2W]
 ```
@@ -83,7 +92,7 @@ multi-scale receptive field captures global noise statistics while skip
 connections preserve the fine structure super-resolution must reconstruct, so
 no error-compounding denoise-then-upscale pipeline. It is also fast: no
 self-attention, only depthwise and 1×1 convolutions, which keeps inference at
-54 ms/image where a transformer of similar quality would cost several times
+168 ms/image where a transformer of similar quality would cost several times
 more.
 
 ---
@@ -111,10 +120,10 @@ pairs. Split is deterministic at seed 42: **train 2720 / val 320 / val_hard 160*
 
 **Stage 1** — pure L1, difficulty 0.20→0.40, lr 2e-4→2e-6.
 **Stage 2** — `L1 1.0 + SSIM 0.10 + FFT 0.05 + edge 0.05 + perceptual 0.01`,
-difficulty fixed 0.30, lr 1e-4→1e-6. The shipped weights are stage 2 at 3k.
+difficulty fixed 0.30, lr 1e-4→1e-6. The shipped weights are stage 2 at 2.5k.
 
 The `--width` flag sets base channels; checkpoints record their own width and
-load back automatically, so width-32 and width-64 models both work everywhere.
+load back automatically, so models of any width work everywhere.
 
 ---
 
@@ -137,8 +146,10 @@ tools/
   ood_probe.py           robustness under degradation shift
   ensemble.py            weight averaging / prediction ensembling
   checkerboard.py        quantifies PixelShuffle artifacts
-tests/                   34 unit tests — `python -m pytest tests -q`
-weights/nafnet64_final.pth
+  gen_gap.py             train/val generalisation gap
+  split_weights.py       splits weights into <100MB parts
+tests/                   36 unit tests — `python -m pytest tests -q`
+weights/                 model in 4 checksum-verified parts + manifest
 outputs/                 restored test-set images
 docs/METHODOLOGY.md      full experimental record
 ```
@@ -153,7 +164,7 @@ in [`docs/METHODOLOGY.md`](docs/METHODOLOGY.md).
 | Change | Gain |
 |---|---|
 | Dataset integrity fix (359 → 3200 usable pairs) | **+0.60 dB** |
-| Capacity: width 32 → 64 | **+0.13 dB** |
+| Capacity: width 32 → 64 → 160 | **+0.24 dB** |
 | 8-view test-time augmentation | **+0.16 dB** |
 | Perceptual weight sweep → 0.01 | LPIPS −10%, SSIM +0.002 |
 
@@ -166,6 +177,9 @@ Findings worth noting:
   ground truth's own spectral statistics (edge 0.309, HF 0.0108) the model sat at
   ~30% of GT high-frequency energy, so training added frequency pressure rather
   than removing it.
+* **Capacity was the binding constraint, and it never saturated.** At 183M
+  parameters on 2,720 images the train/val gap is still **-1.5%** — the model does
+  no better on data it trained on than on data it has never seen.
 * **The difficulty curriculum has a capacity-dependent harm threshold** — ~0.48
   at width 32, ~0.31 at width 64 — found by controlled ablation.
 * **Perceptual loss was tuned, not assumed.** Weights 0.05 / 0.02 / 0.01 were each

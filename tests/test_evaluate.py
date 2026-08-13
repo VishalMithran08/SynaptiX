@@ -106,8 +106,14 @@ def test_image_input_writes_png():
 # End-to-end, exactly as a reviewer would invoke it
 # ---------------------------------------------------------------------------
 
-@pytest.mark.skipif(not (REPO / "weights" / "nafnet64_final.pth").exists(),
-                    reason="weights not present")
+def _weights_available() -> bool:
+    """Weights ship either as one file or as checksum-verified split parts."""
+    w = REPO / "weights"
+    return ((w / "nafnet160_final.pth").exists()
+            or (w / "nafnet160_final.pth.manifest.json").exists())
+
+
+@pytest.mark.skipif(not _weights_available(), reason="weights not present")
 def test_end_to_end_mixed_sizes_cpu():
     """Both scale regimes plus a non-/16 size, in one directory, one run."""
     with tempfile.TemporaryDirectory() as tmp:
