@@ -1,0 +1,48 @@
+# Datasets — never commit. The training set is thousands of .npy files.
+train/
+train_new/
+Test_NoisyLR/
+data_raw/
+*.zip
+*.tar
+*.tar.gz
+*.7z
+
+# Training run directories. These hold 100MB+ checkpoints each and would blow
+# past GitHub's 100MB per-file limit. Only weights/ is committed.
+checkpoints*/
+!weights/
+runs/
+*.log
+
+# Large checkpoints anywhere other than weights/
+/*.pth
+/*.pt
+/*.ckpt
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# Tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+.coverage
+htmlcov/
+
+# OS / editor
+.DS_Store
+__MACOSX/
+Thumbs.db
+.vscode/
+.idea/
+*.swp

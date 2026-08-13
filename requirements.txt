@@ -1,0 +1,31 @@
+# Installable requirements for running evaluate.py and reproducing training.
+#
+# These are deliberately minimum-version specifiers rather than a literal
+# `pip freeze`. The training environment used a PyTorch NIGHTLY build
+# (torch==2.12.0.dev20260408+cu128) because the GPU used for development is an
+# RTX 5060 (compute capability 12.0), which stable wheels of the time did not
+# yet support. Pinning that nightly exactly would make this file
+# uninstallable on any other machine -- nightly wheels are removed from the
+# index and require a custom --index-url.
+#
+# The exact environment is recorded verbatim in requirements-frozen.txt for
+# reproducibility. This file is what you should install to RUN the model.
+#
+#   pip install -r requirements.txt
+#
+# On a CUDA machine, install torch from the official index for your CUDA
+# version first, e.g.:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+
+torch>=2.1
+torchvision>=0.16
+numpy>=1.24
+Pillow>=9.5
+tqdm>=4.65
+
+# Training only (not needed for inference):
+scipy>=1.10
+
+# Optional. Enables the LPIPS metric in tools/eval_report.py --lpips.
+# Inference and training both work without it.
+lpips==0.1.4
