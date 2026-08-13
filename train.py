@@ -74,10 +74,18 @@ _ITER_SCALE = float(os.environ.get("ITER_SCALE", "1.0"))
 PHASES = [
     dict(
         name="phase1_warmup",
-        # 27k x batch 12 = 324k sample-presentations, matching the 20k x batch 16
-        # = 320k of the proven width-32 run. Iteration counts are not comparable
-        # across batch sizes; sample counts are.
-        iters=27_000,
+        # WIDTH-160 SCHEDULE, batch 8.
+        #
+        # 22.5k x batch 8 = 180k sample-presentations, matching where the
+        # width-64 run actually PEAKED (15k x batch 12 = 180k) rather than where
+        # its schedule happened to end (27k x 12 = 324k). Width-64 declined over
+        # the 144k presentations after that peak, so reproducing them would waste
+        # ~4 GPU-hours going backwards.
+        #
+        # Compressing the schedule also means the cosine anneals to completion AT
+        # the peak instead of past it -- the width-64 peak sat at lr ~9.5e-5,
+        # mid-schedule, and never got to converge.
+        iters=22_500,
         lr=2e-4,
         lr_min=2e-6,
         warmup_iters=2_000,
@@ -166,7 +174,10 @@ PHASES = [
         # Blau & Michaeli (CVPR 2018) proved distortion and perceptual quality
         # cannot both be optimised past a bound, so the aim is not "both best"
         # but the best point on the curve for a metric weighting all three.
-        # SCHEDULE COMPRESSED TO 6k. All three phase-2 runs -- ramped, fixed
+        # WIDTH-160: 4.5k x batch 8 = 36k presentations, matching the 3k x batch
+        # 12 = 36k that produced the best width-64 checkpoint.
+        #
+        # SCHEDULE COMPRESSED. All three phase-2 runs -- ramped, fixed
         # difficulty, and perceptual -- peaked at their FIRST validation (5k) and
         # declined thereafter, the perceptual one on all three metrics at once
         # (PSNR 25.9468->25.8694, SSIM 0.771647->0.769992, LPIPS 0.298987->
@@ -179,7 +190,7 @@ PHASES = [
         # with --val_every 1000 to locate the true optimum rather than assuming
         # it sits exactly on a 5000 boundary.
         name="phase2_joint",
-        iters=6_000,
+        iters=4_500,
         lr=1e-4,
         lr_min=1e-6,
         warmup_iters=300,
@@ -204,8 +215,11 @@ PHASES = [
         # distribution, so removing augmentation may cost robustness -- which is
         # why this must be checked with tools/ood_probe.py, not just on the
         # clean split it is tuned for.
-        difficulty_start=0.00,
-        difficulty_end=0.00,
+        # 0.30 is the winning setting. Difficulty 0.0 was tested and was a null
+        # result (identical at 1k, marginally worse at 2k) because cutblur_p and
+        # freq_aug_p already scale to ~0.09/0.06 at difficulty 0.30.
+        difficulty_start=0.30,
+        difficulty_end=0.30,
         hem=True,
         cutblur_p=0.3,
         freq_aug_p=0.2,
@@ -857,6 +871,13 @@ def train(args):
 
     raw_model = NAFNet(**model_config).to(device)
 
+    if args.grad_checkpoint:
+        # Recompute block activations in backward instead of storing them.
+        # Costs ~30% throughput and buys a large drop in activation memory,
+        # which is what makes wide models trainable on a small card.
+        raw_model.enable_gradient_checkpointing(True)
+        log.info("Gradient checkpointing ENABLED (slower per step, less memory).")
+
     if device.type == "cuda":
         raw_model = raw_model.to(
             memory_format=torch.channels_last
@@ -1273,9 +1294,15 @@ def train(args):
                 speed = phase_iter / max(elapsed, 1e-6)
                 lr = optimizer.param_groups[0]["lr"]
 
+                # Peak VRAM is worth surfacing: on a small card the difference
+                # between "fits" and "thrashes" is a few hundred MB, and the
+                # allocator degrades badly rather than failing outright.
+                vram = (torch.cuda.max_memory_allocated() / 1024 ** 3
+                        if device.type == "cuda" else 0.0)
+
                 log.info(
                     "[%s] %d/%d | loss=%.6f | lr=%.3e | "
-                    "%.2f it/s | difficulty=%.3f | grad=%.3f",
+                    "%.2f it/s | difficulty=%.3f | grad=%.3f | vram=%.2fG",
                     phase["name"],
                     phase_iter,
                     phase["iters"],
@@ -1284,6 +1311,7 @@ def train(args):
                     speed,
                     difficulty,
                     float(grad_norm),
+                    vram,
                 )
 
                 if writer:
@@ -1765,6 +1793,13 @@ def parse_args():
         "--benchmark_only",
         action="store_true",
         help="Run --benchmark_layouts and exit without starting training.",
+    )
+    p.add_argument(
+        "--grad_checkpoint",
+        action="store_true",
+        help="Trade ~30%% speed for much lower activation memory. Needed for "
+             "wide models on small GPUs (width 160 @ batch 8 peaks at 5.5GB "
+             "with this on, and does not fit without it).",
     )
     p.add_argument(
         "--val_every",

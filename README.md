@@ -103,17 +103,28 @@ more.
 # 0. Verify the dataset is complete before training on it
 python tools/verify_dataset.py /path/to/train_root
 
-# 1. Stage 1 — L1 warmup, 27k iterations (~2.7 h on RTX 5060)
+# 1. Stage 1 — L1 warmup, 22.5k iterations (~5.5 h on an 8GB RTX 5060)
 python train.py --data_root /path/to/train_root \
-    --save_dir checkpoints_stage1 --width 64 --batch_size 12 \
-    --amp_dtype bf16 --seed 42 --max_iters 27000
+    --save_dir checkpoints_w160 --width 160 --batch_size 8 \
+    --amp_dtype bf16 --seed 42 --grad_checkpoint \
+    --max_iters 22500 --val_every 2500
 
-# 2. Stage 2 — fine-tune with SSIM/FFT/edge/perceptual, 6k iterations (~50 min)
+# 2. Stage 2 — fine-tune with SSIM/FFT/edge/perceptual (~1.1 h)
+#    Continues in the same directory; the phase advances automatically.
 python train.py --data_root /path/to/train_root \
-    --save_dir checkpoints_stage2 --width 64 --batch_size 12 \
-    --amp_dtype bf16 --seed 42 --val_every 1000 \
-    --resume checkpoints_stage1/<15k-checkpoint>.pth --max_iters 21000
+    --save_dir checkpoints_w160 --width 160 --batch_size 8 \
+    --amp_dtype bf16 --seed 42 --grad_checkpoint --val_every 1000 \
+    --resume checkpoints_w160/latest.pth --max_iters 27000
 ```
+
+`--grad_checkpoint` is **required** at width 160 on an 8 GB card: it recomputes
+block activations during backward rather than storing them, cutting peak VRAM
+from over 8 GB to 5.3 GB. It affects memory only — inference output is
+bit-identical and gradients match to 1e-5 (`tests/test_gradcheckpoint.py`).
+
+> **Note on batch size and iteration counts.** Iteration counts are not
+> comparable across batch sizes; sample presentations are. The schedule above is
+> 22,500 x 8 = 180k presentations for stage 1 and 4,500 x 8 = 36k for stage 2.
 
 `--data_root` must contain `train/NoisyLR/` and `train/GT/` as matched `.npy`
 pairs. Split is deterministic at seed 42: **train 2720 / val 320 / val_hard 160**.
@@ -148,7 +159,7 @@ tools/
   checkerboard.py        quantifies PixelShuffle artifacts
   gen_gap.py             train/val generalisation gap
   split_weights.py       splits weights into <100MB parts
-tests/                   36 unit tests — `python -m pytest tests -q`
+tests/                   41 unit tests — `python -m pytest tests -q`
 weights/                 model in 4 checksum-verified parts + manifest
 outputs/                 restored test-set images
 docs/METHODOLOGY.md      full experimental record
@@ -182,6 +193,9 @@ Findings worth noting:
   no better on data it trained on than on data it has never seen.
 * **The difficulty curriculum has a capacity-dependent harm threshold** — ~0.48
   at width 32, ~0.31 at width 64 — found by controlled ablation.
+* **Gradient checkpointing made the 183M model trainable on 8 GB.** Peak VRAM
+  5.3 GB instead of over 8; measured that throughput collapses past ~6 GB peak on
+  this card, so the batch size targets ~80% utilisation rather than filling it.
 * **Perceptual loss was tuned, not assumed.** Weights 0.05 / 0.02 / 0.01 were each
   trained and measured; 0.01 gave the best composite. `tools/checkerboard.py`
   confirmed no model exceeds ground-truth high-frequency content, i.e. none

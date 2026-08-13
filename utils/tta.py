@@ -64,6 +64,57 @@ def tta_predict(model, x: torch.Tensor, clamp: bool = True) -> torch.Tensor:
     return total / len(_D4)
 
 
+@torch.no_grad()
+def tta_predict_multiscale(
+    model,
+    x: torch.Tensor,
+    scales=(1.0, 0.9, 1.1),
+    clamp: bool = True,
+) -> torch.Tensor:
+    """
+    Dihedral self-ensemble evaluated at several input scales.
+
+    Rescaling the input slightly changes which spatial frequencies land where
+    relative to the network's fixed receptive fields, so each scale makes a
+    partly independent error. Predictions are resampled back to the canonical
+    2x output size before averaging, so the result is aligned with `x`.
+
+    Costs len(scales) x the dihedral pass. Only worth it when inference time is
+    not the binding constraint.
+
+    Scales are snapped to a multiple of 16 so PaddedInference has no work to do
+    and no padding-boundary differences creep between scales.
+    """
+    h, w = x.shape[-2:]
+    target = (h * 2, w * 2)
+    total, used = None, 0
+
+    for s in scales:
+        if s == 1.0:
+            xin = x
+        else:
+            nh = max(16, int(round(h * s / 16)) * 16)
+            nw = max(16, int(round(w * s / 16)) * 16)
+            if (nh, nw) == (h, w):
+                continue                      # snapped back onto the base scale
+            xin = torch.nn.functional.interpolate(
+                x, size=(nh, nw), mode="bicubic", align_corners=False
+            )
+
+        pred = tta_predict(model, xin, clamp=False)
+
+        if pred.shape[-2:] != target:
+            pred = torch.nn.functional.interpolate(
+                pred, size=target, mode="bicubic", align_corners=False
+            )
+
+        total = pred if total is None else total + pred
+        used += 1
+
+    out = total / max(used, 1)
+    return out.clamp(0.0, 1.0) if clamp else out
+
+
 def self_consistency(model, x: torch.Tensor) -> float:
     """
     Mean absolute spread across the 8 views, in the original frame.
