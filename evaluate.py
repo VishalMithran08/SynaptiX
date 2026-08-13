@@ -26,6 +26,9 @@ Design notes
 from __future__ import annotations
 
 import argparse
+import hashlib
+import io
+import json
 import sys
 import time
 from pathlib import Path
@@ -42,7 +45,7 @@ from models.nafnet import NAFNet, PaddedInference, config_for_state  # noqa: E40
 from utils.tta import tta_predict  # noqa: E402
 
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff"}
-DEFAULT_WEIGHTS = _ROOT / "weights" / "nafnet64_final.pth"
+DEFAULT_WEIGHTS = _ROOT / "weights" / "nafnet160_final.pth"
 
 
 # ---------------------------------------------------------------------------
@@ -83,19 +86,65 @@ def save_image(tensor: torch.Tensor, src: Path, out_dir: Path) -> None:
         ).save(str(out_dir / f"{src.stem}.png"))
 
 
+def _read_weights(weights: Path) -> io.BytesIO | str:
+    """
+    Return something torch.load can read, reassembling split parts if needed.
+
+    The trained model exceeds GitHub's 100 MB file limit, so it is committed as
+    `<name>.pth.partNNN` alongside a manifest. Parts are concatenated IN MEMORY
+    -- nothing is written to disk, so this works on a read-only checkout and
+    leaves no artifacts. Each part and the whole are checksum-verified, because
+    a silently truncated reassembly would load as garbage weights rather than
+    fail.
+    """
+    if weights.is_file():
+        return str(weights)
+
+    manifest_path = weights.with_suffix(weights.suffix + ".manifest.json")
+    if not manifest_path.is_file():
+        print(f"ERROR: weights not found: {weights}")
+        print(f"       and no manifest at: {manifest_path}")
+        print("Hint: the trained model ships in weights/. Pass --weights to "
+              "point at a different file.")
+        raise SystemExit(1)
+
+    manifest = json.loads(manifest_path.read_text())
+    parts = manifest["parts"]
+    print(f"Weights  : reassembling {len(parts)} parts "
+          f"({manifest['total_bytes'] / 1024**2:.1f} MB) in memory")
+
+    buf = io.BytesIO()
+    digest = hashlib.sha256()
+    for entry in parts:
+        part = weights.parent / entry["name"]
+        if not part.is_file():
+            print(f"ERROR: missing weight part: {part}")
+            print("Hint: ensure the full repository was cloned.")
+            raise SystemExit(1)
+        data = part.read_bytes()
+        if hashlib.sha256(data).hexdigest() != entry["sha256"]:
+            print(f"ERROR: checksum mismatch in {part.name} — file is corrupt.")
+            raise SystemExit(1)
+        buf.write(data)
+        digest.update(data)
+
+    if digest.hexdigest() != manifest["sha256"]:
+        print("ERROR: reassembled weights failed the whole-file checksum.")
+        raise SystemExit(1)
+
+    buf.seek(0)
+    return buf
+
+
 def load_model(weights: Path, device: torch.device) -> PaddedInference:
     # Fail with a readable diagnostic rather than a traceback: this script is
     # run unattended by the benchmarking team, and a bare stack trace gives
     # them nothing actionable.
     weights = Path(weights)
-    if not weights.is_file():
-        print(f"ERROR: weights not found: {weights}")
-        print("Hint: the trained model ships at weights/nafnet64_final.pth. "
-              "Pass --weights to use a different file.")
-        raise SystemExit(1)
+    source = _read_weights(weights)
 
     try:
-        state = torch.load(str(weights), map_location="cpu", weights_only=False)
+        state = torch.load(source, map_location="cpu", weights_only=False)
     except Exception as exc:  # noqa: BLE001
         print(f"ERROR: could not read checkpoint {weights}: {exc}")
         raise SystemExit(1) from exc

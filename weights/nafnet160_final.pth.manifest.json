@@ -1,0 +1,27 @@
+{
+  "target": "nafnet160_final.pth",
+  "total_bytes": 366477771,
+  "sha256": "d0fb1045c8b5d0f60237edc5abb0a61de00ab144581bdd1e227ec7e86e65df15",
+  "parts": [
+    {
+      "name": "nafnet160_final.pth.part000",
+      "bytes": 94371840,
+      "sha256": "5c448a6f0feb3eaa3b347035c42b87b8a5238567d3825ec8bda4a1eab50885c6"
+    },
+    {
+      "name": "nafnet160_final.pth.part001",
+      "bytes": 94371840,
+      "sha256": "fcda5ce14533277b5c2f960231e756ba84e98206b4dab1f6d5e52b044b150098"
+    },
+    {
+      "name": "nafnet160_final.pth.part002",
+      "bytes": 94371840,
+      "sha256": "32b358d623fe5f3b29088bbfeb156b3d6533706f2b8757a327926063f8d7d9bd"
+    },
+    {
+      "name": "nafnet160_final.pth.part003",
+      "bytes": 83362251,
+      "sha256": "b556ecaa0ba3878f6b1525b98aab91d5f43780abdd67c0de4631b4298818a1f9"
+    }
+  ]
+}
