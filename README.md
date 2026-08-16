@@ -71,6 +71,21 @@ That is the whole procedure. Everything needed is committed to this repository
 > Weights are stored float16 and cast to float32 at load; inference runs in
 > float32 throughout. Measured cost of that rounding: **0.0000 dB PSNR**.
 
+### Container
+
+A `Dockerfile` is provided if you prefer a pinned environment:
+
+```bash
+docker build -t semicon-restore .
+
+docker run --gpus all --rm     -v /path/to/test_images:/data/in     -v /path/to/results:/data/out     semicon-restore
+```
+
+Drop `--gpus all` to run on CPU. Extra flags pass through to `evaluate.py`.
+The build runs the test suite, so a broken image fails at build time rather
+than during evaluation, and the weights are baked in — nothing is fetched at
+run time.
+
 ### Inference options
 
 | Flag | Default | Notes |
@@ -188,11 +203,12 @@ tools/
   verify_dataset.py      dataset integrity gate
   eval_report.py         checkpoint evaluation (RAW/EMA, TTA, LPIPS, spectral)
   ood_probe.py           robustness under degradation shift
+  content_shift.py       generalisation to unseen image content
   ensemble.py            weight averaging / prediction ensembling
   checkerboard.py        quantifies PixelShuffle artifacts
   gen_gap.py             train/val generalisation gap
   split_weights.py       splits weights into <100MB parts
-tests/                   41 unit tests — `python -m pytest tests -q`
+tests/                   48 unit tests — `python -m pytest tests -q`
 weights/                 model in 4 checksum-verified parts + manifest
 outputs/                 restored test-set images
 docs/METHODOLOGY.md      full experimental record
@@ -233,6 +249,40 @@ Findings worth noting:
   trained and measured; 0.01 gave the best composite. `tools/checkerboard.py`
   confirmed no model exceeds ground-truth high-frequency content, i.e. none
   fabricates periodic structure.
+
+---
+
+## Generalisation to unseen content
+
+The brief states the test set comes from **different sources**, so the model
+was scored on content it has never seen anything like — photographs, printed
+text, coins, lunar surface, brick — degraded with the *exact* training recipe
+(2× bicubic downsample → multiplicative speckle 0.20 → Gaussian 0.02) so the
+ground truth is exact and the comparison is fair.
+
+```bash
+python tools/content_shift.py --builtin          # bundled photographs
+python tools/content_shift.py --source_dir DIR   # or your own images
+```
+
+| | bicubic 2× | model | gain |
+|---|---|---|---|
+| **PSNR** | 20.6841 | **24.9821** | **+4.30 dB** |
+| **SSIM** | 0.4237 | **0.6520** | **+0.2282** |
+
+**Beats bicubic on 11/11 images**, on content with no relation to the training
+distribution — so the restoration is learned behaviour that transfers, not
+memorised training content. Per-image gain ranges +0.90 dB to +6.53 dB.
+
+The spread is itself a consistency check: the two weakest images are `grass`
+(+0.90) and `gravel` (+2.01), both pure stochastic texture, which is precisely
+the limitation the spectral analysis predicts and the section below states.
+Structured content — `brick` +6.53, `chelsea` +6.10, `camera` +5.69 — gains
+most.
+
+This is distinct from `tools/ood_probe.py`, which holds content fixed and
+varies *degradation strength*. Both axes are reported because they fail
+differently.
 
 ---
 

@@ -29,3 +29,8 @@ scipy>=1.10
 # Optional. Enables the LPIPS metric in tools/eval_report.py --lpips.
 # Inference and training both work without it.
 lpips==0.1.4
+
+# Optional. Supplies the bundled photographs used by
+# tools/content_shift.py --builtin (the content-shift generalisation test).
+# Not needed for inference or training.
+scikit-image>=0.22
