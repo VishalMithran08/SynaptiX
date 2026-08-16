@@ -57,6 +57,8 @@ def main() -> int:
     p.add_argument("--output_dir", default=str(_ROOT / "demo_output"))
     p.add_argument("--weights", default=str(DEFAULT_WEIGHTS))
     p.add_argument("--limit", type=int, default=40)
+    p.add_argument("--tta_views", type=int, default=4, choices=[1, 2, 4, 8],
+                   help="Matches evaluate.py; default 4.")
     p.add_argument("--pause", type=float, default=1.6)
     args = p.parse_args()
 
@@ -86,7 +88,7 @@ def main() -> int:
     runner = load_model(Path(args.weights), dev)
     n_par = sum(q.numel() for q in runner.parameters())
     print(f"  parameters : {n_par:,}")
-    print(f"  TTA        : 8-view dihedral self-ensemble")
+    print(f"  TTA        : {args.tta_views}-view dihedral self-ensemble")
     time.sleep(pause)
 
     # ---- data ------------------------------------------------------------
@@ -122,7 +124,7 @@ def main() -> int:
             torch.cuda.synchronize()
         t0 = time.perf_counter()
         with torch.no_grad():
-            y = tta_predict(runner, x)
+            y = tta_predict(runner, x, views=args.tta_views)
         if dev.type == "cuda":
             torch.cuda.synchronize()
         dt = time.perf_counter() - t0
@@ -147,7 +149,7 @@ def main() -> int:
     print(f"  throughput      : {len(todo) / max(t_total, 1e-9):.2f} images/s")
     print()
     print("  This demo runs one image at a time so each result is visible.")
-    print("  evaluate.py batches them: 400 images in 67.5 s = 168 ms/image,")
+    print("  evaluate.py batches them: 400 images in 38.2 s = 95 ms/image,")
     print("  which is the figure reported for the submission.")
     if scores:
         print(f"\n  PSNR mean       : {np.mean(scores):.4f} dB")
@@ -156,10 +158,11 @@ def main() -> int:
     time.sleep(pause)
 
     section("6.  FULL VALIDATION SET  (320 held-out images)", pause)
-    print("  PSNR   26.4093 dB")
-    print("  SSIM   0.795909")
-    print("  LPIPS  0.319032")
-    print("  hard subset (160 images):  27.8010 dB / 0.840699")
+    print("  PSNR   26.3635 dB")
+    print("  SSIM   0.793831")
+    print("  LPIPS  0.311227")
+    print("  hard subset (160 images):  27.7350 dB / 0.838477")
+    print("  (default 4-view TTA; 8 views gives 26.4093 dB at 2x the time)")
     print()
     print("  Per-image PSNR spans 17.21 - 41.18 dB across the set:")
     print("  performance tracks how much irreducible texture the target holds.")

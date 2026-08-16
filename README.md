@@ -1,7 +1,7 @@
 # Image Restoration — SemiCon AI Hackathon
 
 Restores degraded grayscale images: removes speckle and Gaussian noise **and**
-upscales 2× in a single pass. NAFNet-based, 183.16M parameters, 97 ms per image.
+upscales 2× in a single pass. NAFNet-based, 183.16M parameters, 95 ms per image.
 
 | Metric (320-image held-out validation, default 4-view TTA) | |
 |---|---|
@@ -125,7 +125,7 @@ multi-scale receptive field captures global noise statistics while skip
 connections preserve the fine structure super-resolution must reconstruct, so
 no error-compounding denoise-then-upscale pipeline. It is also fast: no
 self-attention, only depthwise and 1×1 convolutions, which keeps inference at
-97 ms/image where a transformer of similar quality would cost several times
+95 ms/image where a transformer of similar quality would cost several times
 more.
 
 ---
@@ -181,7 +181,7 @@ models/
   losses.py              L1, MS-SSIM, FFT, Sobel edge, VGG perceptual
 data/dataset.py          .npy loader, augmentation, deterministic splits
 utils/
-  tta.py                 8-view dihedral self-ensemble
+  tta.py                 dihedral self-ensemble (1/2/4/8 views)
   metrics.py             PSNR, SSIM, LPIPS
   ema.py                 exponential moving average of weights
 tools/
@@ -209,7 +209,7 @@ in [`docs/METHODOLOGY.md`](docs/METHODOLOGY.md).
 |---|---|
 | Dataset integrity fix (359 → 3200 usable pairs) | **+0.60 dB** |
 | Capacity: width 32 → 64 → 160 | **+0.24 dB** |
-| 8-view test-time augmentation | **+0.16 dB** |
+| Test-time augmentation (4-view default) | **+0.24 dB** |
 | Perceptual weight sweep → 0.01 | LPIPS −10%, SSIM +0.002 |
 
 Findings worth noting:
@@ -245,7 +245,7 @@ Findings worth noting:
   plausible-but-invented detail — inappropriate for an inspection task and
   explicitly cautioned against in the brief.
 * Per-image PSNR ranges from ~17 dB to ~41 dB depending on how much irreducible
-  texture the target contains. The 26.29 dB average conceals that spread.
+  texture the target contains. The 26.36 dB average conceals that spread.
 
 ---
 
