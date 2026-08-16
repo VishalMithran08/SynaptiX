@@ -86,6 +86,9 @@ The build runs the test suite, so a broken image fails at build time rather
 than during evaluation, and the weights are baked in — nothing is fetched at
 run time.
 
+The container is a convenience. **The `pip install` path above is the primary,
+verified route** and is what the reported numbers were produced with.
+
 ### Inference options
 
 | Flag | Default | Notes |
