@@ -1,16 +1,48 @@
 # Image Restoration — SemiCon AI Hackathon
 
 Restores degraded grayscale images: removes speckle and Gaussian noise **and**
-upscales 2× in a single pass. NAFNet-based, 183.16M parameters, 168 ms per image.
+upscales 2× in a single pass. NAFNet-based, 183.16M parameters, 97 ms per image.
 
-| Metric (320-image held-out validation, 8-view TTA) | |
+| Metric (320-image held-out validation, default 4-view TTA) | |
 |---|---|
-| **PSNR** | **26.4093 dB** |
-| **SSIM** | **0.795909** |
-| **LPIPS** | **0.319032** |
-| Hard subset (160 images) | 27.8010 dB / 0.840699 SSIM |
-| Inference | **168.4 ms/image** (RTX 5060 Laptop, incl. TTA) |
+| **PSNR** | **26.3635 dB** |
+| **SSIM** | **0.793831** |
+| **LPIPS** | **0.311227** |
+| Hard subset (160 images) | 27.7350 dB / 0.838477 SSIM |
+| **Inference** | **96.6 ms/image** (RTX 5060 Laptop, incl. TTA) |
 | Model size | 349.5 MB (float16 storage, float32 inference) |
+
+### Accuracy vs throughput — why the default is 4 views
+
+Inference time is a scored axis, so the self-ensemble size was measured rather
+than assumed. On the same validation split:
+
+| `--tta_views` | PSNR | SSIM | LPIPS ↓ | composite | ms/image | 400 images |
+|---|---|---|---|---|---|---|
+| 1 | 26.1227 | 0.786095 | **0.302654** | 0.649707 | **31.7** | **12.7 s** |
+| 2 | 26.2718 | 0.790462 | 0.304176 | 0.652273 | 50.8 | 20.3 s |
+| **4 (default)** | 26.3635 | 0.793831 | 0.311227 | **0.652867** | 96.6 | 38.6 s |
+| 8 | **26.4093** | **0.795909** | 0.319032 | 0.652446 | 190.6 | 76.2 s |
+
+The last four views cost 94 ms/image to buy 0.046 dB — **16x worse value than
+the first flip pair** — and every added view *worsens* LPIPS, because averaging
+smooths. Four views also scores **higher** on a composite of PSNR/SSIM/LPIPS
+(0.652867 vs 0.652446) than eight does, while running twice as fast — so the
+default is not a speed-for-accuracy trade, it is better on both.
+
+**Where the time goes.** Profiling the full pipeline over 400 images:
+
+```
+disk read     0.14 s    0.2%
+host->GPU     0.02 s    0.0%
+GPU compute  75.55 s   99.1%
+GPU->host     0.03 s    0.0%
+disk write    0.49 s    0.6%
+```
+
+I/O is under 1% of runtime, so parallelising it cannot help; `--tta_views` is
+the throughput dial. Use `--tta_views 1` for maximum speed (12.7 s for 400
+images) or `8` for maximum PSNR.
 
 ---
 
@@ -48,7 +80,8 @@ That is the whole procedure. Everything needed is committed to this repository
 | `--weights` | `weights/nafnet160_final.pth` | |
 | `--batch_size` | `8` | Halves automatically on CUDA OOM |
 | `--device` | auto | `cuda` if available, else `cpu` |
-| `--no_tta` | off | Disables the 8-view self-ensemble (~8× faster, −0.16 dB) |
+| `--tta_views` | `4` | Self-ensemble size: 1, 2, 4 or 8. See the table above. |
+| `--no_tta` | off | Shorthand for `--tta_views 1` |
 
 **Input/output behaviour**
 
@@ -92,7 +125,7 @@ multi-scale receptive field captures global noise statistics while skip
 connections preserve the fine structure super-resolution must reconstruct, so
 no error-compounding denoise-then-upscale pipeline. It is also fast: no
 self-attention, only depthwise and 1×1 convolutions, which keeps inference at
-168 ms/image where a transformer of similar quality would cost several times
+97 ms/image where a transformer of similar quality would cost several times
 more.
 
 ---

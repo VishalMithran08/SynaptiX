@@ -169,7 +169,8 @@ def checkpoint_info(path: Path) -> dict:
 # ---------------------------------------------------------------------------
 
 @torch.no_grad()
-def evaluate(model, loader, device, amp_dtype=None, tta=False, lpips_fn=None):
+def evaluate(model, loader, device, amp_dtype=None, tta=False, lpips_fn=None,
+             tta_views=8):
     totals = {}
     batches = 0
 
@@ -183,7 +184,8 @@ def evaluate(model, loader, device, amp_dtype=None, tta=False, lpips_fn=None):
             with torch.amp.autocast(device_type="cuda", dtype=amp_dtype):
                 return model(x)
 
-        pred = tta_predict(forward, noisy) if tta else forward(noisy)
+        pred = (tta_predict(forward, noisy, views=tta_views) if tta
+                else forward(noisy))
 
         pred = pred.float()
 
@@ -243,6 +245,8 @@ def main():
         action="store_true",
         help="Also report LPIPS (requires the lpips package).",
     )
+    p.add_argument("--tta_views", type=int, default=8, choices=[1, 2, 4, 8],
+                   help="Self-ensemble size when --tta is set.")
     p.add_argument("--json_out", default=None)
     args = p.parse_args()
 
@@ -293,9 +297,9 @@ def main():
                 continue
 
             val = evaluate(model, loaders["val"], device, amp_dtype,
-                           args.tta, lpips_fn)
+                           args.tta, lpips_fn, args.tta_views)
             hard = evaluate(model, loaders["val_hard"], device, amp_dtype,
-                            args.tta, lpips_fn)
+                            args.tta, lpips_fn, args.tta_views)
 
             label = "EMA" if origin != "payload.model" else "RAW"
             entry["variants"][label] = {"val": val, "hard": hard,
