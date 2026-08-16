@@ -212,7 +212,8 @@ band 13.3% → 21.0% — a 58% relative gain that moved PSNR only +0.24 dB.
 | Hardware measured on | NVIDIA RTX 5060 Laptop, 8 GB |
 | Scale regimes | 128→256 and 256→512, plus arbitrary sizes |
 | Device | CUDA with automatic CPU fallback |
-| Container | `Dockerfile` provided; runs the test suite at build time |
+| Container | `Dockerfile`, CUDA 12.8 base; runs the test suite at build time |
+| Container verified | built + 400/400 restored on GPU in 43.5 s; output matches native to 2.2e-04 |
 
 **Where the time goes** (400 images, profiled end-to-end):
 

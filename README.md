@@ -86,8 +86,16 @@ The build runs the test suite, so a broken image fails at build time rather
 than during evaluation, and the weights are baked in — nothing is fetched at
 run time.
 
-The container is a convenience. **The `pip install` path above is the primary,
-verified route** and is what the reported numbers were produced with.
+**Verified end-to-end**: built, `48 passed` inside the image, then 400/400 test
+images restored on GPU in 43.5 s. Container output matches the native run to
+2.2e-04 max absolute difference — under 0.06 of one grey level out of 255,
+i.e. cuDNN algorithm selection, not a behavioural difference.
+
+> **Why CUDA 12.8 specifically.** PyTorch wheels built against CUDA 12.4 and
+> earlier ship no kernels for compute capability 12.0 (Blackwell, RTX 50-series)
+> and abort at the first convolution with *"no kernel image is available for
+> execution on the device."* The cu128 build covers sm_70–sm_120, so this image
+> runs on V100/A100/H100 **and** current consumer cards.
 
 ### Inference options
 

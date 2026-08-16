@@ -16,7 +16,13 @@
 # The weights are committed to this repository as four checksum-verified
 # parts, so the image is self-contained: nothing is downloaded at run time.
 
-FROM pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime
+# CUDA 12.8 is required, not incidental. PyTorch wheels built against CUDA 12.4
+# and earlier contain no kernels for compute capability 12.0 (Blackwell, e.g.
+# RTX 50-series), and fail at the first conv with:
+#     CUDA error: no kernel image is available for execution on the device
+# The cu128 builds cover sm_70 through sm_120, so this image runs on both older
+# datacentre cards (V100/A100/H100) and current consumer ones.
+FROM pytorch/pytorch:2.8.0-cuda12.8-cudnn9-runtime
 
 WORKDIR /app
 
