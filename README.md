@@ -212,6 +212,8 @@ tests/                   48 unit tests — `python -m pytest tests -q`
 weights/                 model in 4 checksum-verified parts + manifest
 outputs/                 restored test-set images
 docs/METHODOLOGY.md      full experimental record
+docs/MODEL_CARD.md       shipped-model spec: accuracy, training, limitations
+Dockerfile               pinned environment; runs the tests at build time
 ```
 
 ---
