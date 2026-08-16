@@ -22,14 +22,19 @@ WORKDIR /app
 
 # Dependencies first so this layer caches across source edits. The base image
 # already satisfies torch/torchvision; pip verifies rather than reinstalls.
+# pytest is not in requirements.txt (it is not needed to run the model) but is
+# needed for the build-time check below.
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt pytest
 
 COPY . .
 
-# Fail the build rather than the reviewer's run if anything is broken.
-# This also proves the weight parts survived the COPY intact -- the tests
+# Fail the build rather than the reviewer's run if anything is broken. This
+# also proves the weight parts survived the COPY intact, since the tests
 # checksum them.
+#
+# The build host has no GPU, so this necessarily runs CPU-only; the suite is
+# device-agnostic and passes either way (verified with CUDA_VISIBLE_DEVICES="").
 RUN python -m pytest tests -q
 
 ENV PYTHONUNBUFFERED=1
