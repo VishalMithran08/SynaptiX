@@ -2,7 +2,7 @@
 
 **File:** `checkpoints_w160/model_best.pth` → shipped as
 `submission/weights/nafnet160_final.pth.part{000..003}`
-**Repository:** https://github.com/VishalMithran08/semicon (commit `ae56977`)
+**Repository:** https://github.com/VishalMithran08/semicon
 **Verified:** 532/532 tensors byte-identical between the local best checkpoint
 and the four weight parts committed to GitHub.
 
@@ -16,18 +16,26 @@ while running twice as fast.
 
 | Metric | 4-view (default) | 8-view |
 |---|---|---|
-| **PSNR** | **26.3635 dB** | 26.4093 dB |
+| **PSNR** | **28.9058 dB** | 28.9711 dB |
 | **SSIM** | **0.793831** | 0.795909 |
 | **LPIPS** ↓ | **0.311227** | 0.319032 |
 | MAE (L1) | 0.029385 | 0.029191 |
-| composite | **0.652867** | 0.652446 |
+| composite | 0.698647 | 0.686031 |
 | ms/image | **96.6** | 190.6 |
+
+**PSNR is computed per image and then averaged** (`utils.metrics.psnr_per_image`),
+the convention used by EDSR / RCAN / SwinIR / NAFNet. The repository's older
+`psnr()` pools MSE across a batch before converting to dB; by Jensen's
+inequality that can only understate, and it makes the value batch-size
+dependent. The gap here is **2.54 dB** (26.3635 pooled at batch 16). SSIM and
+LPIPS were already per-image and are unchanged. See
+`tests/test_psnr_convention.py`.
 
 Hard subset (160 images, top 5% by intensity magnitude):
 
 | Metric | Value |
 |---|---|
-| PSNR | 27.7350 dB |
+| PSNR | 30.2194 dB |
 | SSIM | 0.838477 |
 | LPIPS ↓ | 0.306489 |
 | MAE | 0.023792 |
@@ -36,15 +44,20 @@ Hard subset (160 images, top 5% by intensity magnitude):
 
 | views | PSNR | SSIM | LPIPS ↓ | composite | ms/image |
 |---|---|---|---|---|---|
-| 1 | 26.1227 | 0.786095 | **0.302654** | 0.649707 | **31.7** |
-| 2 | 26.2718 | 0.790462 | 0.304176 | 0.652273 | 50.8 |
-| **4 (default)** | 26.3635 | 0.793831 | 0.311227 | **0.652867** | 96.6 |
-| 8 | **26.4093** | **0.795909** | 0.319032 | 0.652446 | 190.6 |
+| 1 | 28.6041 | 0.786095 | **0.302654** | 0.703241 | **31.7** |
+| 2 | 28.7821 | 0.790462 | 0.304176 | **0.707546** | 50.8 |
+| **4 (default)** | 28.9058 | 0.793831 | 0.311227 | 0.698647 | 96.6 |
+| 8 | **28.9711** | **0.795909** | 0.319032 | 0.686031 | 190.6 |
 
-Every added view raises PSNR/SSIM and *lowers* LPIPS quality, because averaging
-smooths. The last four views cost 94 ms/image for 0.046 dB -- 16x worse value
-than the first flip pair -- so 4 views is both faster and better on the
-composite.
+The three measures disagree, and should: PSNR and SSIM rise monotonically with
+views while LPIPS falls monotonically, because averaging smooths -- the
+perception-distortion tradeoff in miniature. The composite (PSNR/50 + SSIM -
+2*LPIPS) therefore peaks at **2 views**, not 4.
+
+4 is shipped because the brief names PSNR and SSIM first: it keeps 84% of the
+8-view PSNR gain for half the time, and the last four views buy +0.065 dB for
++94 ms -- 16x worse value than the first flip pair. `--tta_views 1` is both the
+fastest setting and the best LPIPS if perceptual quality is what is scored.
 
 **End-to-end profile** (400 images): GPU compute 99.1%, disk read 0.2%, disk
 write 0.6%, host/device transfer 0.0%. I/O parallelisation cannot help; the
@@ -56,8 +69,8 @@ Against bicubic 2× upscaling of the degraded input, per-image gain ranges
 **+1.59 dB to +8.50 dB**, depending on how much irreducible texture the target
 contains.
 
-**Per-image PSNR spans 17.21 dB to 41.18 dB.** The 26.41 dB average conceals
-that spread and should not be read as uniform performance.
+**Per-image PSNR spans 11.68 dB to 43.39 dB** (median 28.66). The 28.91 dB
+average conceals that spread and should not be read as uniform performance.
 
 ---
 
@@ -252,7 +265,7 @@ in 12.7 s at 26.1227 dB.
 
 - Deterministic split at seed 42; two independent runs of the same
   configuration landed within **0.001 dB**.
-- **107 training-repo tests** and **48 submission-repo tests** pass.
+- **107 training-repo tests** and **54 submission-repo tests** pass.
 - Weights ship as four <100 MB parts with SHA-256 manifests, reassembled in
   memory by `evaluate.py`; verified byte-identical from a fresh clone.
 - Environment: Python 3.11.9, PyTorch 2.12.0.dev+cu128, CUDA 12.8, cuDNN 9.2.

@@ -5,12 +5,27 @@ upscales 2× in a single pass. NAFNet-based, 183.16M parameters, 95 ms per image
 
 | Metric (320-image held-out validation, default 4-view TTA) | |
 |---|---|
-| **PSNR** | **26.3635 dB** |
+| **PSNR** | **28.9058 dB** |
 | **SSIM** | **0.793831** |
 | **LPIPS** | **0.311227** |
-| Hard subset (160 images) | 27.7350 dB / 0.838477 SSIM |
+| Hard subset (160 images) | 30.2194 dB / 0.838477 SSIM |
 | **Inference** | **96.6 ms/image** (RTX 5060 Laptop, incl. TTA) |
 | Model size | 349.5 MB (float16 storage, float32 inference) |
+
+### How PSNR is aggregated
+
+PSNR is computed **per image, then averaged** (`utils.metrics.psnr_per_image`) —
+the convention used by EDSR, RCAN, SwinIR and NAFNet.
+
+This repository's older `psnr()` pools MSE across a whole batch before
+converting to decibels. That is a different statistic: `-log` is convex, so by
+Jensen's inequality pooling can only *understate* the result, and it makes the
+figure depend on batch size, which a reported metric must not. On this model
+the gap is **2.54 dB** (26.3635 pooled at batch 16 vs 28.9058 per-image).
+`psnr()` is kept unchanged because every training log and ablation table here
+was recorded with it and those comparisons are only meaningful against each
+other; it is no longer the reported figure. `tests/test_psnr_convention.py`
+pins the distinction. SSIM and LPIPS were already per-image and are unaffected.
 
 ### Accuracy vs throughput — why the default is 4 views
 
@@ -19,16 +34,25 @@ than assumed. On the same validation split:
 
 | `--tta_views` | PSNR | SSIM | LPIPS ↓ | composite | ms/image | 400 images |
 |---|---|---|---|---|---|---|
-| 1 | 26.1227 | 0.786095 | **0.302654** | 0.649707 | **31.7** | **12.7 s** |
-| 2 | 26.2718 | 0.790462 | 0.304176 | 0.652273 | 50.8 | 20.3 s |
-| **4 (default)** | 26.3635 | 0.793831 | 0.311227 | **0.652867** | 96.6 | 38.6 s |
-| 8 | **26.4093** | **0.795909** | 0.319032 | 0.652446 | 190.6 | 76.2 s |
+| 1 | 28.6041 | 0.786095 | **0.302654** | 0.703241 | **31.7** | **12.7 s** |
+| 2 | 28.7821 | 0.790462 | 0.304176 | **0.707546** | 50.8 | 20.3 s |
+| **4 (default)** | 28.9058 | 0.793831 | 0.311227 | 0.698647 | 96.6 | 38.6 s |
+| 8 | **28.9711** | **0.795909** | 0.319032 | 0.686031 | 190.6 | 76.2 s |
 
-The last four views cost 94 ms/image to buy 0.046 dB — **16x worse value than
-the first flip pair** — and every added view *worsens* LPIPS, because averaging
-smooths. Four views also scores **higher** on a composite of PSNR/SSIM/LPIPS
-(0.652867 vs 0.652446) than eight does, while running twice as fast — so the
-default is not a speed-for-accuracy trade, it is better on both.
+*(composite = `utils.metrics.composite_score` = PSNR/50 + SSIM − 2·LPIPS)*
+
+The three measures disagree, and the honest reading is that they should:
+**PSNR and SSIM rise monotonically with views while LPIPS falls monotonically**,
+because averaging more views smooths — the perception–distortion tradeoff
+(Blau & Michaeli, 2018) in miniature. The composite, which penalises LPIPS at
+2×, therefore peaks at **2 views**.
+
+Four is the shipped default because the brief names PSNR and SSIM first: it
+keeps **84% of the 8-view PSNR gain for half the time**, and the last four
+views buy only +0.065 dB for +94 ms — 16× worse value than the first flip pair.
+If the scorer weights perceptual quality instead, `--tta_views 1` is both the
+fastest option and the best LPIPS. The flag exposes the whole range so the
+choice is not baked in.
 
 **Where the time goes.** Profiling the full pipeline over 400 images:
 
@@ -41,8 +65,7 @@ disk write    0.49 s    0.6%
 ```
 
 I/O is under 1% of runtime, so parallelising it cannot help; `--tta_views` is
-the throughput dial. Use `--tta_views 1` for maximum speed (12.7 s for 400
-images) or `8` for maximum PSNR.
+the throughput dial.
 
 ---
 
@@ -208,7 +231,7 @@ models/
 data/dataset.py          .npy loader, augmentation, deterministic splits
 utils/
   tta.py                 dihedral self-ensemble (1/2/4/8 views)
-  metrics.py             PSNR, SSIM, LPIPS
+  metrics.py             PSNR (per-image + pooled), SSIM, LPIPS
   ema.py                 exponential moving average of weights
 tools/
   verify_dataset.py      dataset integrity gate
@@ -219,7 +242,7 @@ tools/
   checkerboard.py        quantifies PixelShuffle artifacts
   gen_gap.py             train/val generalisation gap
   split_weights.py       splits weights into <100MB parts
-tests/                   48 unit tests — `python -m pytest tests -q`
+tests/                   54 unit tests — `python -m pytest tests -q`
 weights/                 model in 4 checksum-verified parts + manifest
 outputs/                 restored test-set images
 docs/METHODOLOGY.md      full experimental record
@@ -238,7 +261,7 @@ in [`docs/METHODOLOGY.md`](docs/METHODOLOGY.md).
 |---|---|
 | Dataset integrity fix (359 → 3200 usable pairs) | **+0.60 dB** |
 | Capacity: width 32 → 64 → 160 | **+0.24 dB** |
-| Test-time augmentation (4-view default) | **+0.24 dB** |
+| Test-time augmentation (4-view default) | **+0.30 dB** |
 | Perceptual weight sweep → 0.01 | LPIPS −10%, SSIM +0.002 |
 
 Findings worth noting:
@@ -307,8 +330,8 @@ differently.
   smooth. Closing this gap requires adversarial training, which fabricates
   plausible-but-invented detail — inappropriate for an inspection task and
   explicitly cautioned against in the brief.
-* Per-image PSNR ranges from ~17 dB to ~41 dB depending on how much irreducible
-  texture the target contains. The 26.36 dB average conceals that spread.
+* Per-image PSNR ranges from 11.7 dB to 43.4 dB depending on how much irreducible
+  texture the target contains. The 28.91 dB average conceals that spread.
 
 ---
 
