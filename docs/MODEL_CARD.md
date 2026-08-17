@@ -265,7 +265,8 @@ in 12.7 s at 26.1227 dB.
 
 - Deterministic split at seed 42; two independent runs of the same
   configuration landed within **0.001 dB**.
-- **107 training-repo tests** and **54 submission-repo tests** pass.
+- **54 tests ship in this repository** and pass; a further 107 live in the
+  training workspace, which is not part of the submission.
 - Weights ship as four <100 MB parts with SHA-256 manifests, reassembled in
   memory by `evaluate.py`; verified byte-identical from a fresh clone.
 - Environment: Python 3.11.9, PyTorch 2.12.0.dev+cu128, CUDA 12.8, cuDNN 9.2.
