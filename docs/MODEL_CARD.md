@@ -226,7 +226,7 @@ band 13.3% → 21.0% — a 58% relative gain that moved PSNR only +0.24 dB.
 | Scale regimes | 128→256 and 256→512, plus arbitrary sizes |
 | Device | CUDA with automatic CPU fallback |
 | Container | `Dockerfile`, CUDA 12.8 base; runs the test suite at build time |
-| Container verified | built + 400/400 restored on GPU in 43.5 s; output matches native to 2.2e-04 |
+| Container verified | built + 400/400 restored on GPU in 43.5 s; output matches native to 2.8e-04 across all 400 |
 
 **Where the time goes** (400 images, profiled end-to-end):
 

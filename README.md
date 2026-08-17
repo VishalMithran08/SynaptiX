@@ -111,7 +111,8 @@ run time.
 
 **Verified end-to-end**: built, `48 passed` inside the image, then 400/400 test
 images restored on GPU in 43.5 s. Container output matches the native run to
-2.2e-04 max absolute difference — under 0.06 of one grey level out of 255,
+2.8e-04 max absolute difference across all 400 images — under 0.08 of one
+grey level out of 255,
 i.e. cuDNN algorithm selection, not a behavioural difference.
 
 > **Why CUDA 12.8 specifically.** PyTorch wheels built against CUDA 12.4 and
