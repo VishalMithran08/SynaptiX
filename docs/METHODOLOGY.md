@@ -1,31 +1,44 @@
-# Semiconductor Image Restoration — Findings & Continuation Plan
+# Experimental Record
 
-**Prepared for external review.** Every number below is measured on this machine unless
-explicitly marked as an estimate. Where an inference is uncertain, it says so.
+**How to read this document.** It is a *chronological* record of the
+investigation, written as the work happened, and deliberately not rewritten to
+look tidy in hindsight. Sections 2–9 describe the width-32 and width-64 era,
+when the best model scored 26.19 dB; those numbers are the numbers *as measured
+at that time* and are left intact, because the reasoning only makes sense
+against what was known then. Sections 10 and 11 were open questions and a plan;
+both now carry their resolutions.
+
+**The shipped model is described in section 1 and in `docs/MODEL_CARD.md`.**
+Where this document and the model card disagree, the model card is current.
 
 ---
 
-## 1. Executive summary
+## 1. Executive summary — the shipped model
 
 | | Value |
 |---|---|
-| **Current best result** | **PSNR 26.1931 dB · SSIM 0.791754 · L1 0.029870** |
-| How it is produced | `checkpoints_p2_pilot/model_best.pth` served with 8-view TTA |
+| **Result** | **PSNR 28.9058 dB · SSIM 0.793831 · LPIPS 0.311227** |
+| How it is produced | `weights/nafnet160_final.pth` (EMA) served with 4-view TTA |
 | Measured on | 320-image deterministic validation split, no augmentation |
-| Model | NAFNet-32, 7,492,836 params, 28.7 MB |
+| Model | NAFNet width 160, 183,158,884 params, 349.5 MB |
+| Inference | 95 ms/image; 400 images in 38.2 s |
+
+**PSNR is computed per image and then averaged**, the convention used by EDSR,
+RCAN, SwinIR and NAFNet. Sections 2–9 quote a *pooled* figure (MSE averaged
+across a batch before conversion to dB), which understates by ~2.5 dB and
+depends on batch size. See `tests/test_psnr_convention.py`.
 
 **Where the gains came from:**
 
-| Change | Gain (val PSNR) | Cost |
+| Change | Gain (val PSNR, pooled metric) | Cost |
 |---|---|---|
 | Fixing a broken dataset extraction (359 → 3200 pairs) | **+0.60 dB** | re-download |
-| Phase-2 loss redesign + 25k iterations | +0.09 dB | ~4 h GPU |
-| Test-time augmentation (8-view self-ensemble) | **+0.16 dB** | 0 training |
+| Capacity: width 32 → 64 → 160 | **+0.24 dB** | ~6 h GPU |
+| Phase-2 loss redesign | +0.09 dB | ~1 h GPU |
+| Test-time augmentation | **+0.30 dB** | 0 training |
 
-The two largest wins were a data-integrity fix and a free inference-time trick.
-Training-recipe changes contributed comparatively little. **This is the central fact
-we would like reviewed:** we may be near a task-intrinsic ceiling, or we may be
-leaving something significant on the table.
+The largest single win was a data-integrity fix, not a modelling change. That
+remains the headline finding of this project.
 
 ---
 
@@ -176,7 +189,7 @@ not be run unchanged.**
 
 ---
 
-## 7. Test-time augmentation — the largest single win
+## 7. Test-time augmentation — the largest single inference-time win
 
 8-view geometric self-ensemble over the D4 dihedral group (4 rotations × {identity,
 hflip}), averaged in the original frame. Same checkpoint, same split, same evaluator.
@@ -256,9 +269,13 @@ interpretation.**
 | 2 | **Stale `initial_lr` on resume** — `LambdaLR` seeds its base LR via `group.setdefault("initial_lr", ...)`. Resuming restores the previous phase's `initial_lr` through the optimizer state, so a new phase silently scaled the *old* LR. Observed: Phase 2 ran at 2e-4 instead of the configured 1e-4. | Every resumed run before the fix has an unverified LR |
 | 3 | Smoke-test assertions hardcoded to one experiment's values | Blocked valid configs; tested constants rather than plumbing |
 | 4 | No per-run log file; shell redirection produced UTF-16 with `NativeCommandError` wrapping | Logs hard to read back |
+| 5 | **`psnr()` pooled MSE across the batch** before converting to decibels. The convention in the restoration literature is to convert per image, then average. `-log` is convex, so by Jensen's inequality pooling can only *understate*, and it makes the value depend on batch size — which a reported metric must never do. | **Our headline understated by 2.54 dB** (26.3635 pooled at batch 16 vs 28.9058 per-image). SSIM was already per-image and was unaffected, which is what isolated the cause. Fixed by `psnr_per_image()`; `tests/test_psnr_convention.py` pins the distinction, including that the per-image figure is invariant to batch grouping and the pooled one is not. |
 
 Bug 2 is the one most worth an outside eye — it is silent, and it affects any
-multi-phase resume in this codebase.
+multi-phase resume in this codebase. Bug 5 is the one that cost us the most:
+it was found on the last day, by checking a reported *range* against a fresh
+measurement rather than by any test, and every number in this document's
+sections 2–9 is stated on the pooled metric because of it.
 
 ### Code changes
 - `train.py` — Phase-2 config; `initial_lr` fix; UTF-8 `train.log` per run.
@@ -273,8 +290,16 @@ multi-phase resume in this codebase.
 - Test suite: **34 passed, 0 failed.**
 
 ### Reproducing the headline number
+
+The shipped model, end to end from a clean clone:
 ```
-python eval_report.py --data_root D:/semicon/train_new \
+pip install -r requirements.txt
+python evaluate.py --input_dir <test images> --output_dir <results>
+```
+
+The width-32 number quoted throughout sections 2–9:
+```
+python tools/eval_report.py --data_root D:/semicon/train_new \
     --checkpoints checkpoints_p2_pilot/model_best.pth --tta
 ```
 
@@ -284,93 +309,71 @@ comparisons in this document use one path consistently.*
 
 ---
 
-## 10. Open questions for the reviewer
+## 10. Open questions — and how they resolved
 
-1. **What should we optimize?** The official competition metric is unknown to us.
-   Everything above optimizes PSNR/SSIM. If scoring is perceptual (LPIPS, or human
-   judgment), the strategy inverts: a blurry conditional-mean prediction is *optimal*
-   for PSNR and *poor* perceptually, and perceptual/adversarial losses — which we
-   deliberately removed — would become correct. **This single unknown changes the
-   whole plan.**
-2. **Is the capacity probe (§8) sound?** Does the plateau at ~0.015 indicate a
-   representational limit, or is the probe underpowered (too few iterations, LR too
-   low, or memorization genuinely impossible under this degradation)?
-3. **Is ~26.2 dB reasonable** for joint 2× SR + speckle/Gaussian denoise at this
-   noise level, or does it suggest something is being left on the table?
-4. **Difficulty curriculum** — is a measured harm threshold at ~0.48 plausible, and
-   is the curriculum worth keeping at all versus training at fixed low difficulty?
-5. **Is the degradation model worth inverting explicitly?** Inputs carry physical
-   out-of-range values (up to ~1.85). Is there value in a noise-model-aware
-   preprocessing step rather than learning it end-to-end?
+These were genuinely open when written. Each now carries what we found.
+
+1. **What should we optimize?** *Still formally unknown* — the official metric was
+   never published. We optimise PSNR/SSIM because the submission template names
+   them first, and we expose `--tta_views` so the perception–distortion balance
+   can be moved at inference time without retraining: 1 view gives the best
+   LPIPS, 8 views the best PSNR/SSIM. This is the one question that never
+   closed, so we made the model configurable along that axis instead of guessing.
+2. **Is the capacity probe sound?** *It was underpowered.* The plateau did not
+   indicate a representational limit. Scaling to 183M parameters improved the
+   top frequency band 13.3% → 21.0%, and the train/val gap stayed at −1.5% —
+   capacity never saturated even at 24× the parameters.
+3. **Is ~26.2 dB reasonable?** *Yes, and it was conservative on two counts.*
+   Capacity was still binding (Q2), and our own PSNR helper pooled MSE across
+   batches, understating the figure by 2.5 dB (§9).
+4. **Difficulty curriculum — is the ~0.48 threshold plausible?** *Confirmed, and
+   it moves with capacity:* ~0.48 at width 32, ~0.31 at width 64. It is a
+   capacity-dependent threshold, not a constant — which is why a single global
+   difficulty setting was the wrong shape for the problem.
+5. **Is the degradation model worth inverting explicitly?** *Not pursued.* The
+   end-to-end model already handles out-of-range inputs without clipping, and
+   the measured bottleneck proved to be capacity, then information — not
+   preprocessing.
 
 ---
 
-## 11. Continuation plan — all options considered
+## 11. What was actually done, and what it measured
 
-Gains marked *(est.)* are estimates from literature and our own trend data, **not
-measured**. Costs assume the RTX 5060 Laptop (8 GB) at ~3.5–4 it/s for width 32.
+The plan below was written speculatively, with estimated gains. This is the
+outcome, with measured numbers replacing the estimates.
 
-### Tier 0 — Do regardless
+| Option (as planned) | Status | Measured outcome |
+|---|---|---|
+| **A.** Bank a submission with the current model | done | width-32 submission produced and kept as a fallback |
+| **B.** Confirm the official metric | **never resolved** | not published; handled by making TTA configurable (§10 Q1) |
+| **C/D.** Weight averaging / prediction ensembling | built, not shipped | `tools/ensemble.py`; gains sat inside run-to-run noise |
+| **H.** Width-64 retrain | done | 26.2934 pooled (+0.10 dB over width 32) |
+| — Width-160 (beyond the plan) | done | **the shipped model**; required gradient checkpointing to fit 8 GB |
+| **M.** Alternative architecture (SwinIR / transformer) | done | **negative.** SwinIR's flat topology fits only 13.8M params in 8 GB and needs 15.4 h, against our 183M in 5.5 h. A U-shaped NAFNet+attention hybrid (248.8M) trained, then diverged, and its best checkpoint measured behind the CNN. Both kept as ablations. |
+| **O.** Perceptual / adversarial training | swept; adversarial rejected | perceptual weight tuned 0.05 / 0.02 / 0.01 → 0.01 best. Adversarial rejected on principle: synthesised texture is uncorrelated with the truth and *doubles* the error in the bands it fills. |
+| **Q.** Fine-tune on the hard subset | audited, not done | the audit was right — "hard" selects by maximum absolute magnitude, not difficulty, and scores *better* than the normal split. Mislabelled. |
 
-| Option | Gain | Cost | Risk |
-|---|---|---|---|
-| **A. Generate submission with current model + TTA** | banked | 4 min | none |
-| **B. Confirm the official competition metric** | decisive | minutes | none |
+**Two experiments that failed, reported because they were informative:**
 
-Nothing else should be started before A and B. A valid submission at 26.19 dB in
-hand is worth more than any speculative gain; and B may invalidate the entire
-optimization direction.
+- **FFT loss reweighting.** Per-band recovery falls from 99.6% at DC to 21.0% at
+  Nyquist, so we doubled the high-frequency loss share (40.3% → 63.0%).
+  High-frequency recovery got **worse** (21.0% → 19.9%). An FFT *magnitude* loss
+  constrains how much high-frequency energy exists but not *where* it goes, so
+  misplaced detail costs more in L1 than it earns in FFT and the optimiser emits
+  less. Fine stochastic texture is not recoverable by loss engineering — the
+  model does not lack the capacity to produce it, it lacks the information to
+  place it.
+- **The NAFNet + window-attention hybrid.** It trained stably, then a gradient
+  spike saturated the outputs; `clamp(0,1)` has zero gradient outside its range,
+  so gradients read exactly 0.000 for 25,000 iterations before anyone noticed.
+  Six and a half GPU-hours lost to a failure mode with an obvious detector we
+  had not built.
 
-### Tier 1 — Cheap, low risk
-
-| Option | Gain *(est.)* | Cost | Notes |
-|---|---|---|---|
-| **C. Checkpoint weight averaging** | +0.02–0.05 dB | minutes | Average 20k/25k/30k weights. `train.py` already has a `model_avg.pth` path. Free; near-zero risk. |
-| **D. Multi-checkpoint prediction ensembling** | +0.03–0.08 dB | inference only | Average *predictions* (not weights) from 2–3 checkpoints. Stacks with TTA. Costs N× inference. |
-| **E. Difficulty-capped short rerun (hold 0.45)** | +0.01–0.03 dB | ~2 h | Tests §6's threshold directly. Scientifically clean, small payoff. |
-| **F. EMA decay sweep (0.999 → 0.9995/0.9999)** | +0.01–0.03 dB | ~2 h each | EMA consistently beat RAW; the decay was never tuned. |
-
-### Tier 2 — Moderate cost, moderate payoff
-
-| Option | Gain *(est.)* | Cost | Notes |
-|---|---|---|---|
-| **G. Width 48 retrain** | +0.10–0.20 dB | ~3–4 h | ~17M params, batch 12. Safer memory profile than width 64. |
-| **H. Width 64 retrain** | +0.15–0.30 dB | ~6–7 h | ~30M params, batch 8–12 on 8 GB. Must train from scratch — weights do not transfer across widths. Our headline capacity recommendation, but see §8 caveat. |
-| **I. Deeper instead of wider** (`middle_blocks` 12→20) | +0.05–0.15 dB | ~3 h | Cheaper in memory than widening; unclear whether depth or width binds. |
-| **J. Cosine warm restarts / longer schedule at capped difficulty** | +0.05–0.10 dB | ~4 h | Phase 2 converged; restarts may escape the basin. |
-| **K. Charbonnier loss instead of pure L1** | ±0.05 dB | ~2 h | Smooth-L1 variant, standard in SR. Cheap to test. |
-| **L. Larger effective batch via gradient accumulation** | +0.02–0.08 dB | ~same | Not currently implemented. Would decouple batch size from VRAM for Tier-2 runs. |
-
-### Tier 3 — High cost or high uncertainty
-
-| Option | Gain *(est.)* | Cost | Notes |
-|---|---|---|---|
-| **M. Alternative architecture** (SwinIR / Restormer / HAT) | unknown, possibly large | 1–3 days | Transformer restoration models typically outperform NAFNet at equal params, at higher training cost. Biggest potential step change; biggest time risk. |
-| **N. Pretrained initialization / transfer** | unknown | ~1 day | Initialize from a public denoising/SR checkpoint. Domain differs (grayscale, unusual value range) — may not transfer. |
-| **O. Perceptual or adversarial training** | metric-dependent | ~1 day | **Only if §10 Q1 says perceptual.** Would *reduce* PSNR/SSIM while improving perceptual quality. We measured perceptual loss costing 0.020 SSIM. |
-| **P. Explicit degradation-model preprocessing** | unknown | ~1 day | Variance-stabilizing transform for speckle (e.g. log or Anscombe-like) before the network, exploiting the known noise model rather than learning it. |
-| **Q. Fine-tune on the hard subset** | unclear | ~2 h | Hard-set metrics are *better* than normal-set ones, so "hard" may be mislabelled — it selects by max absolute magnitude, not by difficulty. Worth auditing before acting. |
-
-### Explicitly not recommended
-
-- **`phase3_finetune` as configured** — `difficulty=1.00` is deep in the measured
-  harmful regime (§6).
-- **200k-iteration training** — at batch 16 over 2720 images that is ~1176 epochs,
-  the same regime that produced degradation on the broken dataset.
-- **More data / stronger regularization / heavier augmentation** — there is zero
-  generalization gap (§8); these attack a problem that does not exist here.
-
-### Our recommended sequence
-
-1. **A + B** (submission banked, metric confirmed) — before anything else.
-2. **C + D** — free/cheap ensembling wins.
-3. **H** (width 64) overnight *if* time permits and Q1 confirms PSNR/SSIM scoring.
-4. **M** only if there is substantial time remaining and Tier 2 disappoints.
-
-**Honest expectation:** Tier 1 + Tier 2 realistically lands ~**26.4–26.6 dB**.
-A step change beyond that likely requires Tier 3 (architecture), and we are not
-confident it is available at all — §8 leaves open that we are near a task-intrinsic
-ceiling.
+**Honest expectation, as written at the time:** *"Tier 1 + Tier 2 realistically
+lands ~26.4–6.6 dB."* On the pooled metric the shipped model reached 26.41 dB —
+inside that range, and reached by capacity scaling (H, extended past the plan)
+rather than by the architecture change (M) that was expected to deliver the step
+change.
 
 ---
 
@@ -378,10 +381,20 @@ ceiling.
 
 | Path | Contents |
 |---|---|
-| `semi/checkpoints_p2_pilot/model_best.pth` | **Best model** (Phase-2 25k EMA) |
-| `semi/checkpoints_p1_fulldata/` | Phase-1 full-data run + `train.log` |
-| `semi/checkpoints_p2_pilot/` | Phase-2 run, checkpoints every 5k, `viz/` worst-case images |
-| `train_new/` | Verified 3200-pair dataset |
-| `p1_fulldata_eval.json`, `p2_pilot_eval.json`, `p2_final_eval.json`, `tta_eval.json` | Full RAW/EMA + spectral evaluations |
-| `verify_dataset.py` | Dataset integrity gate |
-| `audit_report.md` | **Superseded** — conclusions drawn from the broken dataset |
+| `weights/nafnet160_final.pth.part{000..003}` | **The shipped model** — width 160, EMA, four checksummed parts |
+| `evaluate.py` | Inference entry point; reassembles the weights in memory |
+| `docs/MODEL_CARD.md` | Full specification of the shipped model — **current** |
+| `train.py` | Training pipeline, all phases and losses |
+| `tools/verify_dataset.py` | Dataset integrity gate — the check behind the largest single gain |
+| `tools/eval_report.py` | Checkpoint evaluation (RAW/EMA, TTA, LPIPS, spectral) |
+| `tools/content_shift.py` | Generalisation to unseen content |
+| `tools/ood_probe.py` | Robustness under degradation shift |
+| `tools/spectral_bands.py` | Per-frequency-band recovery |
+| `tools/checkerboard.py` | Quantifies PixelShuffle artifacts |
+| `outputs/` | 400 restored test images |
+| `models/swinir.py` | SwinIR implementation — the ablation behind §11 option M |
+
+Historical artifacts referenced in sections 2–9 (`checkpoints_p2_pilot/`,
+`p*_eval.json`, `audit_report.md`) live in the training workspace and are not
+part of this repository. `audit_report.md` in particular is **superseded** — its
+conclusions were drawn from the broken dataset.
