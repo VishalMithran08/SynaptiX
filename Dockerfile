@@ -6,12 +6,12 @@
 #       -v /path/to/results:/data/out \
 #       semicon-restore
 #
-# Without a GPU, drop `--gpus all` -- evaluate.py falls back to CPU
+# Without a GPU, drop `--gpus all` -- run.py falls back to CPU
 # automatically (slower, identical output).
 #
 # Extra flags pass straight through, e.g. for maximum throughput:
 #   docker run --gpus all --rm -v ...:/data/in -v ...:/data/out \
-#       semicon-restore --input_dir /data/in --output_dir /data/out --tta_views 1
+#       semicon-restore /data/in /data/out --tta_views 1
 #
 # The weights are committed to this repository as four checksum-verified
 # parts, so the image is self-contained: nothing is downloaded at run time.
@@ -45,5 +45,5 @@ RUN python -m pytest tests -q
 
 ENV PYTHONUNBUFFERED=1
 
-ENTRYPOINT ["python", "evaluate.py"]
-CMD ["--input_dir", "/data/in", "--output_dir", "/data/out"]
+ENTRYPOINT ["python", "run.py"]
+CMD ["/data/in", "/data/out"]

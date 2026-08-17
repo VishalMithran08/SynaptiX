@@ -1,5 +1,8 @@
 # Image Restoration — SemiCon AI Hackathon
 
+**Team SynaptiX** · KLA Problem Statement PS01 — AI-Based Restoration of
+Degraded Images
+
 Restores degraded grayscale images: removes speckle and Gaussian noise **and**
 upscales 2× in a single pass. NAFNet-based, 183.16M parameters, 95 ms per image.
 
@@ -76,11 +79,43 @@ git clone <this-repo>
 cd <this-repo>
 pip install -r requirements.txt
 
-python evaluate.py --input_dir /path/to/test_images --output_dir /path/to/results
+python run.py <input-dir> <output-dir>
 ```
 
+`run.py` is the entry point. It reads every `.npy` in `<input-dir>`, writes one
+restored `.npy` per input to `<output-dir>` under the same filename, and creates
+the output directory if it does not exist.
+
 That is the whole procedure. Everything needed is committed to this repository
-— **no Git LFS, no external download, no manual steps.**
+— **no Git LFS, no external download, no API key, no manual configuration, and
+no internet access required at run time.** CUDA is used when available, with an
+automatic CPU fallback.
+
+Every written file is validated before the run reports success: float32, shape
+`(H, W)`, exactly 2x the input resolution, finite, and inside `[0, 1]`. A
+non-zero exit status means at least one file failed, and the reason is printed.
+
+```
+$ python run.py ./Test_NoisyLR ./results
+Input    : Test_NoisyLR
+Output   : results
+Device   : cuda (NVIDIA GeForce RTX 5060 Laptop GPU)
+Weights  : reassembling 4 parts (349.5 MB) in memory
+Model    : NAFNet width 160  (183.16M params)
+TTA      : 4 view(s)
+Found    : 400 .npy file(s)
+
+Inputs found      : 400
+Restored + checked: 400
+Total time        : 43.15 s
+Per image         : 107.9 ms
+
+RESULT: OK -- one validated .npy written for every input.
+```
+
+> `evaluate.py` is the same pipeline behind a flag-based interface
+> (`--input_dir` / `--output_dir`) and also handles PNG/JPEG in and out. Use
+> `run.py` for the graded `.npy` path.
 
 > **How the weights are packaged.** At 183M parameters the model is 349.5 MB,
 > over GitHub's 100 MB per-file limit. Rather than depend on Git LFS (which
@@ -123,10 +158,12 @@ i.e. cuDNN algorithm selection, not a behavioural difference.
 
 ### Inference options
 
+Positional on `run.py`, flags on `evaluate.py`; everything else is shared.
+
 | Flag | Default | Notes |
 |---|---|---|
-| `--input_dir` | *(required)* | Directory of degraded images |
-| `--output_dir` | *(required)* | Created if absent |
+| `input-dir` | *(required)* | Directory of degraded `.npy` images |
+| `output-dir` | *(required)* | Created if absent |
 | `--weights` | `weights/nafnet160_final.pth` | |
 | `--batch_size` | `8` | Halves automatically on CUDA OOM |
 | `--device` | auto | `cuda` if available, else `cpu` |
@@ -224,7 +261,8 @@ load back automatically, so models of any width work everywhere.
 ## Repository layout
 
 ```
-evaluate.py              inference entry point  ← the script to run
+run.py                   inference entry point  ← the script to run
+evaluate.py              same pipeline, flag interface + PNG/JPEG support
 train.py                 training pipeline (all phases/losses)
 models/
   nafnet.py              architecture + PaddedInference (arbitrary sizes)
@@ -243,7 +281,7 @@ tools/
   checkerboard.py        quantifies PixelShuffle artifacts
   gen_gap.py             train/val generalisation gap
   split_weights.py       splits weights into <100MB parts
-tests/                   54 unit tests — `python -m pytest tests -q`
+tests/                   72 unit tests — `python -m pytest tests -q`
 weights/                 model in 4 checksum-verified parts + manifest
 outputs/                 restored test-set images
 docs/METHODOLOGY.md      full experimental record

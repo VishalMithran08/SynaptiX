@@ -224,6 +224,7 @@ band 13.3% → 21.0% — a 58% relative gain that moved PSNR only +0.24 dB.
 | 400-image test set | **38.2 s** |
 | Hardware measured on | NVIDIA RTX 5060 Laptop, 8 GB |
 | Scale regimes | 128→256 and 256→512, plus arbitrary sizes |
+| Entry point | `python run.py <input-dir> <output-dir>` |
 | Device | CUDA with automatic CPU fallback |
 | Container | `Dockerfile`, CUDA 12.8 base; runs the test suite at build time |
 | Container verified | built + 400/400 restored on GPU in 43.5 s; output matches native to 2.8e-04 across all 400 |
@@ -265,7 +266,7 @@ in 12.7 s at 26.1227 dB.
 
 - Deterministic split at seed 42; two independent runs of the same
   configuration landed within **0.001 dB**.
-- **54 tests ship in this repository** and pass; a further 107 live in the
+- **72 tests ship in this repository** and pass; a further 107 live in the
   training workspace, which is not part of the submission.
 - Weights ship as four <100 MB parts with SHA-256 manifests, reassembled in
   memory by `evaluate.py`; verified byte-identical from a fresh clone.

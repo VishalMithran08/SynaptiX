@@ -31,6 +31,12 @@ dist/
 venv/
 env/
 
+# Demo / scratch run artifacts. These are regenerated on demand and were
+# committed by accident once (105 MB).
+demo_output/
+demo_400/
+results/
+
 # Tooling
 .pytest_cache/
 .mypy_cache/
