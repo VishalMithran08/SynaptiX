@@ -149,7 +149,7 @@ def main() -> int:
     print(f"  throughput      : {len(todo) / max(t_total, 1e-9):.2f} images/s")
     print()
     print("  This demo runs one image at a time so each result is visible.")
-    print("  evaluate.py batches them: 400 images in 38.2 s = 95 ms/image,")
+    print("  run.py batches them: 400 images in 38.2 s = 95 ms/image,")
     print("  which is the figure reported for the submission.")
     if scores:
         print(f"\n  PSNR mean       : {np.mean(scores):.4f} dB")
