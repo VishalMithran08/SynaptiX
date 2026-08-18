@@ -349,7 +349,7 @@ outcome, with measured numbers replacing the estimates.
 | **C/D.** Weight averaging / prediction ensembling | built, not shipped | `tools/ensemble.py`; gains sat inside run-to-run noise |
 | **H.** Width-64 retrain | done | 26.2934 pooled (+0.10 dB over width 32) |
 | — Width-160 (beyond the plan) | done | **the shipped model**; required gradient checkpointing to fit 8 GB |
-| **M.** Alternative architecture (SwinIR / transformer) | done | **negative.** SwinIR's flat topology fits only 13.8M params in 8 GB and needs 15.4 h, against our 183M in 5.5 h. A U-shaped NAFNet+attention hybrid (248.8M) trained, then diverged, and its best checkpoint measured behind the CNN. Both kept as ablations. |
+| **M.** Alternative architecture (SwinIR / transformer) | done | **negative.** SwinIR's flat topology fits only 13.8M params in 8 GB and needs 15.4 h, against our 183M in 5.5 h. A U-shaped NAFNet+attention hybrid (248.8M) trained, then diverged, and its best checkpoint measured behind the CNN. `models/swinir.py` ships as the SwinIR ablation; the hybrid was a configuration of the NAFNet code and neither its variant nor its checkpoint is shipped, since it lost. |
 | **O.** Perceptual / adversarial training | swept; adversarial rejected | perceptual weight tuned 0.05 / 0.02 / 0.01 → 0.01 best. Adversarial rejected on principle: synthesised texture is uncorrelated with the truth and *doubles* the error in the bands it fills. |
 | **Q.** Fine-tune on the hard subset | audited, not done | the audit was right — "hard" selects by maximum absolute magnitude, not difficulty, and scores *better* than the normal split. Mislabelled. |
 
