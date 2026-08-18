@@ -86,6 +86,28 @@ python run.py <input-dir> <output-dir>
 restored `.npy` per input to `<output-dir>` under the same filename, and creates
 the output directory if it does not exist.
 
+**Running on an NVIDIA GPU.** `run.py` selects CUDA automatically when it is
+available and falls back to CPU otherwise, printing which it chose — there is
+no flag to set and no configuration step.
+
+On **Linux x86_64**, the usual evaluation environment, `pip install -r
+requirements.txt` is sufficient: PyPI's `torch` wheel declares the CUDA runtime,
+cuDNN, cuBLAS and NCCL as dependencies gated to `platform_system == "Linux" and
+platform_machine == "x86_64"`, so pip installs a CUDA-capable build without
+anything extra.
+
+On **Windows** the default PyPI wheel is CPU-only. To use a GPU there, install
+the CUDA build first:
+
+```bash
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+pip install -r requirements.txt
+```
+
+`cu128` covers compute capability 7.0 through 12.0, so it works on V100/A100/H100
+as well as RTX 50-series cards. The model runs correctly either way; the only
+difference is speed (roughly 95 ms/image on a laptop GPU versus ~3 s on CPU).
+
 That is the whole procedure. Everything needed is committed to this repository
 — **no Git LFS, no external download, no API key, no manual configuration, and
 no internet access required at run time.** CUDA is used when available, with an
