@@ -2,7 +2,7 @@
 
 **File:** `checkpoints_w160/model_best.pth` → shipped as
 `submission/weights/nafnet160_final.pth.part{000..003}`
-**Repository:** https://github.com/VishalMithran08/semicon
+**Repository:** https://github.com/VishalMithran08/SynaptiX
 **Verified:** 532/532 tensors byte-identical between the local best checkpoint
 and the four weight parts committed to GitHub.
 
