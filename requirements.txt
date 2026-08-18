@@ -24,7 +24,7 @@
 #                  for the Linux CUDA wheel). To use an NVIDIA GPU, install
 #                  the CUDA build BEFORE this file:
 #
-#                    pip install torch torchvision #                        --index-url https://download.pytorch.org/whl/cu128
+#     pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
 #
 #                  cu128 covers compute capability 7.0-12.0: V100, A100,
 #                  H100, and RTX 20/30/40/50-series.
