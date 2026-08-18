@@ -77,10 +77,20 @@ the throughput dial.
 ```bash
 git clone <this-repo>
 cd <this-repo>
+
+# WINDOWS ONLY - run this FIRST if you want the GPU used.
+# PyPI's default torch wheel on Windows is CPU-only, so without this
+# line the model runs correctly but ~30x slower, on the CPU.
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+
+# Linux: nothing extra needed - this installs a CUDA build by itself.
 pip install -r requirements.txt
 
 python run.py <input-dir> <output-dir>
 ```
+
+`run.py` prints which device it selected. If it says `Device : cpu` on a
+machine that has an NVIDIA GPU, the Windows line above is what you are missing.
 
 `run.py` is the entry point. It reads every `.npy` in `<input-dir>`, writes one
 restored `.npy` per input to `<output-dir>` under the same filename, and creates

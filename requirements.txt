@@ -1,4 +1,4 @@
-# Installable requirements for running evaluate.py and reproducing training.
+# Installable requirements for running run.py and reproducing training.
 #
 # These are deliberately minimum-version specifiers rather than a literal
 # `pip freeze`. The training environment used a PyTorch NIGHTLY build
@@ -13,9 +13,24 @@
 #
 #   pip install -r requirements.txt
 #
-# On a CUDA machine, install torch from the official index for your CUDA
-# version first, e.g.:
-#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+# GPU SUPPORT DIFFERS BY PLATFORM -- this matters.
+#
+#   Linux x86_64:  nothing extra. PyPI's torch wheel declares the CUDA
+#                  runtime, cuDNN, cuBLAS and NCCL as dependencies gated to
+#                  platform_system == "Linux", so `pip install -r
+#                  requirements.txt` already gives a CUDA-capable build.
+#
+#   Windows:       the default PyPI wheel is CPU-ONLY (241 MB, versus 888 MB
+#                  for the Linux CUDA wheel). To use an NVIDIA GPU, install
+#                  the CUDA build BEFORE this file:
+#
+#                    pip install torch torchvision #                        --index-url https://download.pytorch.org/whl/cu128
+#
+#                  cu128 covers compute capability 7.0-12.0: V100, A100,
+#                  H100, and RTX 20/30/40/50-series.
+#
+# Either way the model produces identical results -- run.py falls back to CPU
+# automatically and prints which device it chose. Only speed differs.
 
 torch>=2.1
 torchvision>=0.16
